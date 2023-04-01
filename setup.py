@@ -14,7 +14,7 @@ DEPENDENCIES = (PROJECT_ROOT / "requirements.txt").read_text().splitlines()
 
 setup(
     name="aioxnat",
-    version=".".join([VERSION]),
+    version=".".join([str(v) for v in VERSION]),
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,
     author="Keenan W. Wilkinson",
@@ -25,7 +25,7 @@ setup(
     keywords=["XNAT", "xnat", "async", "REST"],
     classifiers=[
         "Intended Audience :: Developers",
-        "Programming Language :: Python :: 3.11+",
+        "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License"
     ]
 )
