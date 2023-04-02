@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 PROJECT_ROOT = pathlib.Path(__file__).parent
 
 # Configuration
-VERSION = (0, 0, 1)
+VERSION = (0, 0, 2)
 DESCRIPTION = "Asyncronous XNAT RESTful Interface"
 LONG_DESCRIPTION = """\
 RESTful interface, from client to XNAT, for basic operations.

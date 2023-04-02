@@ -190,6 +190,7 @@ class SimpleAsyncRestAPI(AsyncRestAPI):
             "URI")
         url = _join_uri(self, "data", "projects", project_name, "experiments")
         res = (await self._client.get(url,
+                        follow_redirects=True,
                         timeout=self._timeouts, #type: ignore[arg-type]
                         params={"format": "json", "columns": columns}))
         res.raise_for_status()
