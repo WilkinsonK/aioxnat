@@ -24,9 +24,11 @@ validation.
 def validator(**params) -> Validator:
     ...
 
+
 @typing.overload
 def validator(vfn: Validator, /) -> Validator:
     ...
+
 
 def validator(vfn: Validator | None = None, **params):
     """
