@@ -295,6 +295,7 @@ class SimpleAsyncRestAPI(AsyncRestAPI):
             "ID", "type", "series_description", "quality", "URI")
         url = _join_uri(self, experiment.URI.lstrip("/"), "scans")
         res = (await self._client.get(url,
+                        follow_redirects=True,
                         timeout=self._timeouts, #type: ignore[arg-type]
                         params={"format": "json", "columns": columns}))
         res.raise_for_status()
