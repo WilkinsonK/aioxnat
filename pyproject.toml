@@ -18,6 +18,9 @@ classifiers = [
 requires-python = ">=3.10.0"
 dynamic = ["version", "dependencies"]
 
+[options]
+exclude = ["tests"]
+
 [tool.setuptools.dynamic]
 version = { attr = "aioxnat.__version__" }
 dependencies = { file = "requirements.txt" }
