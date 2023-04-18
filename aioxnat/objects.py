@@ -1,41 +1,27 @@
 import dataclasses, enum, functools, re, pathlib
-import abc, typing
+import typing
 
-Ps = typing.ParamSpec("Ps")
-Ta = typing.TypeVar("Ta")
+from aioxnat.protocols import *
 
-GenericTypeFactory = (
-    typing.Callable[[type[Ta]], Ta] |
-    typing.Callable[typing.Concatenate[type[Ta], Ps], Ta])
-"""
-Outline of callable which produces an object of
-the given type.
-"""
+project_object_dataclass = dataclasses.dataclass(slots=True, frozen=True)
 
-Validator = (
-    typing.Callable[[Ta], bool] |
-    typing.Callable[typing.Concatenate[Ta, Ps], bool])
-"""
-Callable returning whether object passes
-validation.
-"""
 
 @typing.overload
-def validator(**params) -> Validator:
+def validator(**params) -> _Validator:
     ...
 
 
 @typing.overload
-def validator(vfn: Validator, /) -> Validator:
+def validator(vfn: _Validator, /) -> _Validator:
     ...
 
 
-def validator(vfn: Validator | None = None, **params):
+def validator(vfn: _Validator | None = None, **params):
     """
     Marks some callable as a validator function.
     """
 
-    def wrapper(vfn: Validator):
+    def wrapper(vfn: _Validator):
 
         @functools.wraps(vfn)
         def inner(*args, **kwds):
@@ -50,15 +36,7 @@ def validator(vfn: Validator | None = None, **params):
     return wrapper
 
 
-def isvalidator(vfn: typing.Callable) -> bool:
-    """
-    Whether this callable is a validator.
-    """
-
-    return (callable(vfn) and getattr(vfn, "__is_validator__", False))
-
-
-def members(enumt: type[enum.StrEnum]):
+def _members(enumt: type[enum.StrEnum]):
     return enumt.__members__
 
 
@@ -78,87 +56,6 @@ class ScanSubType(enum.StrEnum):
 
 class ScanTaskType(enum.StrEnum):
     UNKNOWN = enum.auto()
-
-
-@typing.runtime_checkable
-class ProjectObject(typing.Protocol):
-    """
-    An element in the heirarchy of an XNAT
-    project.
-    """
-
-    __validators__: typing.Iterable[Validator[typing.Self, Ps]] = () #type: ignore[valid-type]
-
-    @functools.cached_property
-    def is_valid(self):
-        """
-        Whether or not this `ProjectObject` is
-        valid according to it's validators.
-        """
-
-        return all([vfn(self) for vfn in self.__validators__])
-
-    @property
-    @abc.abstractmethod
-    def name(self) -> str:
-        """
-        The name associated with this object.
-        """
-
-    @abc.abstractmethod
-    def into_mapping(self) -> typing.Mapping[str, str]:
-        """
-        Transforms this object into a mapping of
-        it's values.
-        """
-
-    @classmethod
-    @abc.abstractmethod
-    def from_mapping(cls, mapping: typing.Mapping[str, str]) -> typing.Self:
-        """
-        Transforms the given mapping into a this
-        `ProjectObject` type.
-        """
-
-    @classmethod
-    def insert_validator(cls, vfn: Validator[typing.Self, Ps]) -> None:
-        """
-        Inserts a validator into this object's
-        series of validators.
-        """
-
-        tmp = set(cls.__validators__)
-        if vfn in tmp:
-            raise ValueError("validator already included.")
-
-        tmp.add(vfn) #type: ignore[arg-type]
-        cls.__validators__ = tuple(tmp)
-
-    @classmethod
-    def remove_validator(cls, vfn: Validator[typing.Self, Ps]) -> None:
-        """
-        Removes a validator from the series of
-        validators.
-        """
-
-        tmp = set(cls.__validators__)
-        if vfn not in tmp:
-            raise ValueError("validator not in validators.")
-
-        tmp.remove(vfn) #type: ignore[arg-type]
-        cls.__validators__ = tuple(tmp)
-
-    def __init_subclass__(cls):
-        # Find and 'register' validators.
-        for name in dir(cls):
-            attr = getattr(cls, name, None)
-            if not (attr and isvalidator(attr)):
-                continue
-
-            try:
-                cls.insert_validator(attr)
-            except ValueError:
-                ... # validator already inserted.
 
 
 class BaseExperiment(ProjectObject):
@@ -189,7 +86,7 @@ class BaseExperiment(ProjectObject):
         return bool(re.match(r".*[a-zA-Z0-9].*", self.id))
 
 
-@dataclasses.dataclass(slots=True, frozen=True)
+@project_object_dataclass
 class Experiment(BaseExperiment):
     id: str
     xsiType: str
@@ -218,7 +115,7 @@ class BaseScan(ProjectObject):
         addition to the task type.
         """
 
-        pattern = r"^.*_(%s).*$" % r"|".join(members(self.__subtype_enum__).values())
+        pattern = r"^.*_(%s).*$" % r"|".join(_members(self.__subtype_enum__).values())
         tmp = re.findall(pattern, self.series_description)
 
         try:
@@ -233,7 +130,7 @@ class BaseScan(ProjectObject):
         scan was taken.
         """
 
-        pattern = r"^.*(%s).*$" % r"|".join(members(self.__tasktype_enum__).values())
+        pattern = r"^.*(%s).*$" % r"|".join(_members(self.__tasktype_enum__).values())
         tmp = re.findall(pattern, self.series_description)
 
         try:
@@ -259,7 +156,7 @@ class BaseScan(ProjectObject):
         the sub type of the scan could be.
         """
 
-        if "UNKNOWN" not in members(enumt):
+        if "UNKNOWN" not in _members(enumt):
             raise AttributeError("Enum type must have member 'UNKNOWN'.")
         self.__subtype_enum__ = enumt
 
@@ -269,7 +166,7 @@ class BaseScan(ProjectObject):
         the task type could be.
         """
 
-        if "UNKNOWN" not in members(enumt):
+        if "UNKNOWN" not in _members(enumt):
             raise AttributeError("Enum type must have member 'UNKNOWN'.")
         self.__tasktype_enum__ = enumt
 
@@ -282,7 +179,7 @@ class BaseScan(ProjectObject):
         return (self.task.value != "UNKNOWN")
 
 
-@dataclasses.dataclass(slots=True, frozen=True)
+@project_object_dataclass
 class Scan(BaseScan):
     id: str
     data_type: str
@@ -318,7 +215,7 @@ class BaseFileData(ProjectObject):
         return cls(**parsed)
 
 
-@dataclasses.dataclass(slots=True, frozen=True)
+@project_object_dataclass
 class FileData(BaseFileData):
     content: str
     size: str
@@ -330,10 +227,10 @@ class FileData(BaseFileData):
     URI: str
 
 
-ExperimentFactory = GenericTypeFactory[Experiment, Ps]
+ExperimentFactory = _GenericTypeFactory[Experiment, Ps]
 """
 Callable which produces an `Experiment` object.
 """
 
-ScanFactory = GenericTypeFactory[Scan, Ps]
+ScanFactory = _GenericTypeFactory[Scan, Ps]
 """Callable which produces a `Scan` object."""

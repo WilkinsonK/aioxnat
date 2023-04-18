@@ -1,30 +1,15 @@
 import enum
-import abc, typing
+import typing
 
 import httpx
 
 from aioxnat import objects
+from aioxnat.protocols import *
 
-
-Ta = typing.TypeVar("Ta")
-
-_MappingSeries = typing.Sequence[typing.Mapping[str, str]]
-_AsyncChunkGenerator = typing.AsyncGenerator[typing.Sequence[Ta], None]
-
-
-class HasURI(typing.Protocol):
-
-    @property
-    def URI(self) -> str:
-        ...
-
-
-class HasURL(typing.Protocol):
-
-    @property
-    def URL(self) -> str:
-        ...
-
+__all__ = (
+    (
+        "SimpleAsyncRestAPI",
+    ))
 
 async def _aiter(it: typing.Iterable[Ta]):
     for item in it:
@@ -47,117 +32,6 @@ def _parse_rest_result(response: httpx.Response) -> _MappingSeries:
 class WebProtocol(enum.StrEnum):
     HTTP = "http"
     HTTPS = "https"
-
-
-class ResourceAction(enum.Enum):
-    REFRESH = enum.auto()
-    DELETE = enum.auto()
-    CREATE = enum.auto()
-
-
-class AsyncRestAPI(typing.Protocol):
-
-    @property
-    @abc.abstractmethod
-    def URL(self) -> str:
-        """
-        URL pointing to the target host. This
-        includes the protocol.
-        """
-
-    @abc.abstractmethod
-    def get_experiments(self,
-                        project_name: str,
-                        *,
-                        chunk_size: typing.Optional[int]) -> _AsyncChunkGenerator[objects.Experiment]:
-        """
-        Retrieves experiment data from a
-        particular project.
-        """
-
-    @typing.overload
-    @abc.abstractmethod
-    def get_scans(self,
-                        experiment_or_project: str, /) -> _AsyncChunkGenerator[objects.Scan]:
-        ...
-
-    @typing.overload
-    @abc.abstractmethod
-    def get_scans(self,
-                        experiment_or_project: objects.Experiment, /) -> _AsyncChunkGenerator[objects.Scan]:
-        ...
-
-    @typing.overload
-    @abc.abstractmethod
-    def get_scans(self,
-                  experiment_or_project: str,
-                  *,
-                  chunk_size: typing.Optional[int]) -> _AsyncChunkGenerator[objects.Scan]:
-        ...
-
-    @typing.overload
-    @abc.abstractmethod
-    def get_scans(self,
-                  experiment_or_project: objects.Experiment,
-                  *,
-                  chunk_size: typing.Optional[int]) -> _AsyncChunkGenerator[objects.Scan]:
-        ...
-
-    @abc.abstractmethod #type: ignore[misc]
-    def get_scans(self,
-                  experiment_or_project: objects.Experiment | str,
-                  *,
-                  chunk_size: typing.Optional[int]) -> _AsyncChunkGenerator[objects.Scan]:
-        """
-        Retrieves scans related to a particular
-        experiment.
-        """
-
-    @typing.overload
-    @abc.abstractmethod
-    async def resources(self, scan: objects.Scan, /) -> _MappingSeries:
-        """Retrieves resources from a scan."""
-
-    @typing.overload
-    @abc.abstractmethod
-    async def resources(self,
-                        scan: objects.Scan,
-                        name: str, /) -> typing.Sequence[objects.FileData]:
-        """
-        Retrieves resource data from a scan.
-        """
-
-    @typing.overload
-    @abc.abstractmethod
-    async def resources(self,
-                        scan: objects.Scan,
-                        name: str,
-                        action: ResourceAction,
-                        **params: str) -> None:
-        """
-        Perform the given action on a resource
-        belonging to a scan.
-        """
-
-    @abc.abstractmethod
-    async def resources(self,
-                            scan: objects.Scan,
-                            name: typing.Optional[str] = None,
-                            action: typing.Optional[ResourceAction] = None,
-                            **params: str) -> _MappingSeries | typing.Sequence[objects.FileData] | None:
-        ...
-
-    @classmethod
-    @abc.abstractmethod
-    def build_client(cls, api: typing.Self) -> httpx.Client:
-        """Builds a raw client object."""
-
-    @abc.abstractmethod
-    async def __aenter__(self) -> typing.Self:
-        ...
-
-    async def __aexit__(self, *exc_details):
-        ...
 
 
 class SimpleAsyncRestAPI(AsyncRestAPI):
@@ -196,16 +70,17 @@ class SimpleAsyncRestAPI(AsyncRestAPI):
         res.raise_for_status()
         results = res.json()["ResultSet"]["Result"]
 
-        position   = 0
-        make_chunk = lambda p: [
-            objects.Experiment.from_mapping(r)
-            for r in results[p:p+chunk_size]]
+        position = 0
+
+        def make_chunk(p):
+            return [objects.Experiment.from_mapping(r)
+                    for r in results[p:p+chunk_size]]
 
         while data := make_chunk(position):
             yield tuple(data)
             position += chunk_size
 
-    async def get_scans(self,
+    async def get_scans(self, #type: ignore[override]
                     experiment_or_project: objects.Experiment | str,
                     *,
                     chunk_size: typing.Optional[int] = None):
@@ -225,7 +100,7 @@ class SimpleAsyncRestAPI(AsyncRestAPI):
                 yield tuple(data)
                 position += chunk_size
 
-    async def resources(self,
+    async def resources(self, #type: ignore[override]
                             scan: objects.Scan,
                             name: typing.Optional[str] = None,
                             action: typing.Optional[ResourceAction] = None,
@@ -265,6 +140,7 @@ class SimpleAsyncRestAPI(AsyncRestAPI):
         res = await self._client.request(
             method,
             url,
+            follow_redirects=True,
             timeout=self._timeouts, #type: ignore[arg-type]
             params=params)
         res.raise_for_status()
@@ -274,13 +150,17 @@ class SimpleAsyncRestAPI(AsyncRestAPI):
         auth = httpx.BasicAuth(api._username, api._password)
         return httpx.AsyncClient(auth=auth)
 
-    async def _get_resources(self, scan: objects.Scan, name: typing.Optional[str]):
+    async def _get_resources(
+            self, scan: objects.Scan,
+            name: typing.Optional[str]):
+
         parts = scan.URI.lstrip("/"), "resources"
         if name:
             parts += name, "files" #type: ignore[assignment]
 
         url = _join_uri(self, *parts)
         res = await self._client.get(url,
+                        follow_redirects=True,
                         timeout=self._timeouts, #type: ignore[arg-type]
                         params={"format": "json"})
         res.raise_for_status()
@@ -290,7 +170,10 @@ class SimpleAsyncRestAPI(AsyncRestAPI):
             return tuple([objects.FileData.from_mapping(r) for r in ret])
         return tuple(ret)
 
-    async def _get_scans(self, experiment: objects.Experiment) -> _MappingSeries:
+    async def _get_scans(
+            self,
+            experiment: objects.Experiment) -> _MappingSeries:
+
         columns = _join_columns(
             "ID", "type", "series_description", "quality", "URI")
         url = _join_uri(self, experiment.URI.lstrip("/"), "scans")
@@ -301,7 +184,10 @@ class SimpleAsyncRestAPI(AsyncRestAPI):
         res.raise_for_status()
         return _parse_rest_result(res)
 
-    def _parse_exp_or_pjt(self, exp_or_pjt) -> _AsyncChunkGenerator[objects.Experiment]:
+    def _parse_exp_or_pjt(
+            self,
+            exp_or_pjt) -> _AsyncChunkGenerator[objects.Experiment]:
+
         if isinstance(exp_or_pjt, objects.Experiment):
             return _aiter(((exp_or_pjt,),))
         return self.get_experiments(exp_or_pjt, chunk_size=1)

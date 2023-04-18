@@ -3,7 +3,16 @@ Asyncronous XNAT RESTful Interface.
 RESTful interface, from client to XNAT, for basic operations.
 """
 
-__version__ = (0, 0, 4)
+__all__ = (
+    (
+        "AsyncRestAPI",
+        "Experiment",
+        "FileData",
+        "Scan",
+        "SimpleAsyncRestAPI"
+    ))
+__version__ = (0, 0, 5)
 
+from aioxnat.protocols import AsyncRestAPI
 from aioxnat.objects import FileData, Experiment, Scan
-from aioxnat.rest import AsyncRestAPI, SimpleAsyncRestAPI
+from aioxnat.rest import SimpleAsyncRestAPI
